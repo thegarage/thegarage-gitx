@@ -10,6 +10,7 @@ describe Thegarage::Gitx::Cli::IntegrateCommand do
     }
   end
   let(:cli) { Thegarage::Gitx::Cli::IntegrateCommand.new(args, options, config) }
+  let(:repo) { cli.send(:repo) }
   let(:branch) { double('fake branch', name: 'feature-branch') }
 
   before do
@@ -35,6 +36,22 @@ describe Thegarage::Gitx::Cli::IntegrateCommand do
         cli.integrate
       end
       it 'defaults to staging branch' do
+        should meet_expectations
+      end
+    end
+    context 'when staging branch does not exist remotely' do
+      before do
+        expect(repo)
+      end
+      it 'does not delete local branch' do
+        should meet_expectations
+      end
+    end
+    context 'when staging branch does exist remotely' do
+      before do
+        expect(repo)
+      end
+      it 'deletes local branch' do
         should meet_expectations
       end
     end
