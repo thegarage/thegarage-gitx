@@ -17,19 +17,21 @@ module Thegarage
 
           checkout_branch Thegarage::Gitx::BASE_BRANCH
           run_cmd 'git pull'
-          repo.create_branch branch_name, 'master'
+          repo.create_branch branch_name, Thegarage::Gitx::BASE_BRANCH
           checkout_branch branch_name
         end
 
         private
 
         def valid_new_branch_name?(branch)
-          return false if remote_branches.include?(branch)
+          return false if repo_branches.include?(branch)
           branch =~ VALID_BRANCH_NAME_REGEX
         end
 
-        def remote_branches
-          @remote_branches ||= repo.branches.each_name(:remote).to_a.map { |branch| branch.split('/').last }
+        def repo_branches
+          @branch_names ||= repo.branches.each_name.map do |branch|
+            branch.split('/').last
+          end
         end
       end
     end
