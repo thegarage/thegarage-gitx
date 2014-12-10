@@ -28,27 +28,97 @@ describe Thegarage::Gitx::Cli::ReleaseCommand do
         should meet_expectations
       end
     end
-    context 'when user confirms release' do
-      let(:fake_update_command) { double('fake update command', update: nil) }
-      let(:fake_integrate_command) { double('fake integrate command') }
-      let(:fake_cleanup_command) { double('fake cleanup command', cleanup: nil) }
+    context 'when user confirms release and pull request exists' do
+      let(:authorization_token) { '123123' }
       before do
-        expect(Thegarage::Gitx::Cli::UpdateCommand).to receive(:new).and_return(fake_update_command)
-        expect(Thegarage::Gitx::Cli::IntegrateCommand).to receive(:new).and_return(fake_integrate_command)
-        expect(Thegarage::Gitx::Cli::CleanupCommand).to receive(:new).and_return(fake_cleanup_command)
-
-        expect(fake_integrate_command).to receive(:integrate).with('staging')
+        expect(cli).to receive(:execute_command).with(Thegarage::Gitx::Cli::UpdateCommand, :update)
+        expect(cli).to receive(:execute_command).with(Thegarage::Gitx::Cli::IntegrateCommand, :integrate, 'staging')
+        expect(cli).to_not receive(:execute_command).with(Thegarage::Gitx::Cli::CleanupCommand, :cleanup)
 
         expect(cli).to receive(:yes?).and_return(true)
+        allow(cli).to receive(:authorization_token).and_return(authorization_token)
 
         expect(cli).to receive(:run_cmd).with("git checkout master").ordered
         expect(cli).to receive(:run_cmd).with("git pull origin master").ordered
         expect(cli).to receive(:run_cmd).with("git merge --no-ff feature-branch").ordered
         expect(cli).to receive(:run_cmd).with("git push origin HEAD").ordered
 
-        cli.release
+        VCR.use_cassette('pull_request_does_exist') do
+          cli.release
+        end
       end
       it 'runs expected commands' do
+        should meet_expectations
+      end
+    end
+    context 'when user confirms release and pull request does not exist' do
+      let(:authorization_token) { '123123' }
+      let(:new_pull_request) do
+        {
+          html_url: "https://path/to/html/pull/request",
+          issue_url: "https://api/path/to/issue/url",
+          number: 10,
+          head: {
+            ref: "branch_name"
+          }
+        }
+      end
+      before do
+        allow(cli).to receive(:authorization_token).and_return(authorization_token)
+        allow(cli).to receive(:ask_editor).and_return('description')
+
+        expect(cli).to receive(:execute_command).with(Thegarage::Gitx::Cli::UpdateCommand, :update).twice
+        expect(cli).to receive(:execute_command).with(Thegarage::Gitx::Cli::IntegrateCommand, :integrate, 'staging')
+        expect(cli).to_not receive(:execute_command).with(Thegarage::Gitx::Cli::CleanupCommand, :cleanup)
+
+        expect(cli).to receive(:yes?).and_return(true)
+
+        expect(cli).to receive(:run_cmd).with("git log master...feature-branch --reverse --no-merges --pretty=format:'* %s%n%b'").and_return("2013-01-01 did some stuff").ordered
+        expect(cli).to receive(:run_cmd).with("git checkout master").ordered
+        expect(cli).to receive(:run_cmd).with("git pull origin master").ordered
+        expect(cli).to receive(:run_cmd).with("git merge --no-ff feature-branch").ordered
+        expect(cli).to receive(:run_cmd).with("git push origin HEAD").ordered
+
+        stub_request(:post, 'https://api.github.com/repos/thegarage/thegarage-gitx/pulls').to_return(:status => 201, :body => new_pull_request.to_json, :headers => {'Content-Type' => 'application/json'})
+        VCR.use_cassette('pull_request_does_not_exist') do
+          cli.release
+        end
+      end
+      it 'creates pull request on github' do
+        should meet_expectations
+      end
+      it 'runs expected commands' do
+        should meet_expectations
+      end
+    end
+    context 'when --cleanup flag passed' do
+      let(:options) do
+        {
+          cleanup: true
+        }
+      end
+      let(:authorization_token) { '123123' }
+      before do
+        expect(cli).to receive(:execute_command).with(Thegarage::Gitx::Cli::UpdateCommand, :update)
+        expect(cli).to receive(:execute_command).with(Thegarage::Gitx::Cli::IntegrateCommand, :integrate, 'staging')
+        expect(cli).to receive(:execute_command).with(Thegarage::Gitx::Cli::CleanupCommand, :cleanup)
+
+        expect(cli).to receive(:yes?).and_return(true)
+        allow(cli).to receive(:authorization_token).and_return(authorization_token)
+
+        expect(cli).to receive(:run_cmd).with("git checkout master").ordered
+        expect(cli).to receive(:run_cmd).with("git pull origin master").ordered
+        expect(cli).to receive(:run_cmd).with("git merge --no-ff feature-branch").ordered
+        expect(cli).to receive(:run_cmd).with("git push origin HEAD").ordered
+
+        VCR.use_cassette('pull_request_does_exist') do
+          cli.release
+        end
+      end
+      it 'runs expected commands' do
+        should meet_expectations
+      end
+      it 'prunes merged branches (git cleanup)' do
         should meet_expectations
       end
     end
