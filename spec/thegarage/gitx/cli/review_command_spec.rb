@@ -219,7 +219,7 @@ describe Thegarage::Gitx::Cli::ReviewCommand do
       let(:github_password) { 'secretz' }
       let(:authorization_token) { '123981239123' }
       before do
-        stub_request(:post, "https://ryan@codecrate.com:secretz@api.github.com/authorizations").
+        stub_request(:put, %r{https://ryan@codecrate.com:secretz@api.github.com/authorizations/#{Thegarage::Gitx::Github::CLIENT_ID}/}).
           to_return(:status => 200, :body => JSON.dump(token: authorization_token), :headers => {'Content-Type' => 'application/json'})
 
         expect(cli).to receive(:ask).with('Github password for ryan@codecrate.com: ', {:echo => false}).and_return(github_password)
@@ -257,7 +257,7 @@ describe Thegarage::Gitx::Cli::ReviewCommand do
       let(:authorization_token) { '123981239123' }
       let(:two_factor_auth_token) { '456456' }
       before do
-        stub_request(:post, "https://ryan@codecrate.com:secretz@api.github.com/authorizations").
+        stub_request(:put, %r{https://ryan@codecrate.com:secretz@api.github.com/authorizations/#{Thegarage::Gitx::Github::CLIENT_ID}/}).
           with(headers: {'X-GitHub-OTP' => two_factor_auth_token}).
           to_return(:status => 200, :body => JSON.dump(token: authorization_token), :headers => {'Content-Type' => 'application/json'})
 
