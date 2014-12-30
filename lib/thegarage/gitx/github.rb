@@ -1,10 +1,13 @@
 require 'octokit'
+require 'digest/sha2'
 
 module Thegarage
   module Gitx
     module Github
       REVIEW_CONTEXT = 'peer_review'
       CLIENT_URL = 'https://github.com/thegarage/thegarage-gitx'
+      CLIENT_ID = '3212b0bfb60acaf792fc'
+      CLIENT_SECRET = '264e30f443a6762b6be365ea00bdeaaa9427523e'
       PULL_REQUEST_FOOTER = <<-EOS.dedent
         # Pull Request Protips(tm):
         # * Include description of how this change accomplishes the task at hand.
@@ -102,11 +105,16 @@ module Thegarage
 
       def authorization_request_options
         timestamp = Time.now.utc.strftime('%Y-%m-%dT%H:%M:%S%z')
-        client_name = "The Garage Git eXtensions - #{github_slug} #{timestamp}"
+        note = "The Garage Git eXtensions - #{github_slug} #{timestamp}"
+        fingerprint = Digest::SHA2.hexdigest(note)
         options = {
           :scopes => ['repo'],
-          :note => client_name,
-          :note_url => CLIENT_URL
+          :note => note,
+          :note_url => CLIENT_URL,
+          :client_id => CLIENT_ID,
+          :client_secret => CLIENT_SECRET,
+          :fingerprint => fingerprint,
+          :accept => 'application/vnd.github.mirage-preview+json'
         }
         two_factor_auth_token = ask("Github two factor authorization token (if enabled): ", :echo => false)
         say ''
