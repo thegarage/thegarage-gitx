@@ -9,7 +9,7 @@ describe Thegarage::Gitx::Cli::ReviewCommand do
       pretend: true
     }
   end
-  let(:cli) { Thegarage::Gitx::Cli::ReviewCommand.new(args, options, config) }
+  let(:cli) { described_class.new(args, options, config) }
   let(:repo) { double('fake repo', config: repo_config) }
   let(:repo_config) do
     {
@@ -43,6 +43,7 @@ describe Thegarage::Gitx::Cli::ReviewCommand do
         expect(Thegarage::Gitx::Cli::UpdateCommand).to receive(:new).and_return(fake_update_command)
 
         allow(cli).to receive(:authorization_token).and_return(authorization_token)
+        expect(cli).to receive(:run_cmd).with('git checkout feature-branch').ordered
         expect(cli).to receive(:run_cmd).with("git log master...feature-branch --reverse --no-merges --pretty=format:'* %s%n%b'").and_return("* old commit\n\n* new commit").ordered
         expect(cli).to receive(:ask_editor).with("### Changelog\n* old commit\n\n* new commit\n#{Thegarage::Gitx::Github::PULL_REQUEST_FOOTER}", anything).and_return('description')
 
@@ -50,6 +51,41 @@ describe Thegarage::Gitx::Cli::ReviewCommand do
 
         VCR.use_cassette('pull_request_does_not_exist') do
           cli.review
+        end
+      end
+      it 'creates github pull request' do
+        should meet_expectations
+      end
+      it 'runs expected commands' do
+        should meet_expectations
+      end
+    end
+    context 'when target branch is not nil and pull request does not exist' do
+      let(:authorization_token) { '123123' }
+      let(:changelog) { '* made some fixes' }
+      let(:fake_update_command) { double('fake update command', update: nil) }
+      let(:new_pull_request) do
+        {
+          html_url: "https://path/to/html/pull/request",
+          issue_url: "https://api/path/to/issue/url",
+          number: 10,
+          head: {
+            ref: "branch_name"
+          }
+        }
+      end
+      before do
+        expect(Thegarage::Gitx::Cli::UpdateCommand).to receive(:new).and_return(fake_update_command)
+
+        allow(cli).to receive(:authorization_token).and_return(authorization_token)
+        expect(cli).to receive(:run_cmd).with('git checkout feature-branch').ordered
+        expect(cli).to receive(:run_cmd).with("git log master...feature-branch --reverse --no-merges --pretty=format:'* %s%n%b'").and_return("* old commit\n\n* new commit").ordered
+        expect(cli).to receive(:ask_editor).with("### Changelog\n* old commit\n\n* new commit\n#{Thegarage::Gitx::Github::PULL_REQUEST_FOOTER}", anything).and_return('description')
+
+        stub_request(:post, 'https://api.github.com/repos/thegarage/thegarage-gitx/pulls').to_return(:status => 201, :body => new_pull_request.to_json, :headers => {'Content-Type' => 'application/json'})
+
+        VCR.use_cassette('pull_request_does_not_exist') do
+          cli.review 'feature-branch'
         end
       end
       it 'creates github pull request' do
@@ -209,7 +245,7 @@ describe Thegarage::Gitx::Cli::ReviewCommand do
         end.to raise_error(/Github user not configured/)
       end
     end
-    context 'when config.authorization_token is nil' do
+    context 'when global config token is nil' do
       let(:repo_config) do
         {
           'remote.origin.url' => 'https://github.com/thegarage/thegarage-gitx',
@@ -227,21 +263,53 @@ describe Thegarage::Gitx::Cli::ReviewCommand do
 
         @auth_token = cli.send(:authorization_token)
       end
-      it 'stores authorization_token in git config' do
-        expect(repo_config).to include('thegarage.gitx.githubauthtoken' => authorization_token)
+      it 'stores authorization_token in global config' do
+        expect(global_config).to include('token' => authorization_token)
       end
       it { expect(@auth_token).to eq authorization_token }
     end
-    context 'when there is an existing authorization_token' do
+    context 'when global authorization_token is nil and first request fails' do
+      let(:repo_config) do
+        {
+          'remote.origin.url' => 'https://github.com/thegarage/thegarage-gitx',
+          'github.user' => 'ryan@codecrate.com'
+        }
+      end
+      let(:github_password) { 'secretz' }
+      let(:authorization_token) { '123981239123' }
+      before do
+        stub_request(:post, "https://ryan@codecrate.com:secretz@api.github.com/authorizations").
+          to_return(:status => 401, :body => JSON.dump(token: authorization_token), :headers => {'Content-Type' => 'application/json'}).
+          then.
+          to_return(:status => 200, :body => JSON.dump(token: authorization_token), :headers => {'Content-Type' => 'application/json'})
+
+        expect(cli).to receive(:ask).with('Github password for ryan@codecrate.com: ', {:echo => false}).and_return(github_password).twice
+        expect(cli).to receive(:ask).with('Github two factor authorization token (if enabled): ', {:echo => false}).and_return(nil).twice
+
+        @auth_token = cli.send(:authorization_token)
+      end
+      it 'stores authorization_token in global config' do
+        expect(global_config).to include('token' => authorization_token)
+      end
+      it { expect(@auth_token).to eq authorization_token }
+    end
+    context 'when the global config has an existing token' do
       let(:authorization_token) { '123981239123' }
       let(:repo_config) do
         {
           'remote.origin.url' => 'https://github.com/thegarage/thegarage-gitx',
-          'github.user' => 'ryan@codecrate.com',
-          'thegarage.gitx.githubauthtoken' => authorization_token
+          'github.user' => 'ryan@codecrate.com'
+        }
+      end
+      let(:config) do
+        {
+          'token' => authorization_token
         }
       end
       before do
+        File.open(global_config_file, 'w') do |file|
+          file.write(config.to_yaml)
+        end
         @auth_token = cli.send(:authorization_token)
       end
       it { expect(@auth_token).to eq authorization_token }
@@ -266,8 +334,8 @@ describe Thegarage::Gitx::Cli::ReviewCommand do
 
         @auth_token = cli.send(:authorization_token)
       end
-      it 'stores authorization_token in git config' do
-        expect(repo_config).to include('thegarage.gitx.githubauthtoken' => authorization_token)
+      it 'stores authorization_token in global config' do
+        expect(global_config).to include('token' => authorization_token)
       end
       it { expect(@auth_token).to eq authorization_token }
     end
